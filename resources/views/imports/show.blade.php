@@ -1,0 +1,41 @@
+@extends('layouts.app')
+@section('title', 'Import · '.$leadImport->filename)
+@section('page-name', 'Import leads')
+
+@section('content')
+    <div class="breadcrumb"><a href="{{ route('imports.index') }}">Import leads</a><x-icon name="chevron-right" size="13" /><span>{{ $leadImport->filename }}</span></div>
+    <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-dot"></span> SECURE SPREADSHEET IMPORT</div><h1>{{ $step === 'summary' ? 'Import complete' : 'Review your file' }}</h1><p class="page-description">{{ $leadImport->filename }} <span class="mini-sep">·</span> {{ number_format($leadImport->rows_total) }} data rows</p></div><a class="btn btn-secondary" href="{{ route('imports.index') }}"><x-icon name="arrow-left" size="15" /> All imports</a></div>
+    <div class="import-layout">
+        <div class="import-steps" aria-label="Import steps">
+            @php $steps = ['preview'=>'Preview','mapping'=>'Map columns','validation'=>'Validate','summary'=>'Import']; $order = array_keys($steps); $currentIndex = array_search($step, $order, true); @endphp
+            @foreach ($steps as $key => $label)<div class="import-step {{ $step === $key ? 'active' : (array_search($key, $order, true) < $currentIndex ? 'complete' : '') }}"><span class="import-step-number">@if(array_search($key, $order, true) < $currentIndex)<x-icon name="check" size="13" />@else{{ array_search($key, $order, true) + 1 }}@endif</span><span>{{ $label }}</span></div>@if(!$loop->last)<i class="import-step-line"></i>@endif @endforeach
+        </div>
+
+        @if ($step === 'preview')
+            <section class="surface-card form-card"><div class="card-heading" style="padding:0 0 13px"><div><h2>Preview your data</h2><p>Take a look at the first few rows before matching the columns.</p></div><span class="status-pill status-orange">{{ count($parsed['headers']) }} columns</span></div>
+                <div class="table-scroll"><table class="mapping-table"><thead><tr>@foreach($parsed['headers'] as $header)<th>{{ $header ?: 'Blank column' }}</th>@endforeach</tr></thead><tbody>@foreach(array_slice($parsed['rows'],0,8) as $row)<tr>@foreach($parsed['headers'] as $index => $header)<td class="mapping-sample">{{ $row[$index] ?? '—' }}</td>@endforeach</tr>@endforeach</tbody></table></div>
+                <div class="form-actions form-actions-between"><a class="btn btn-secondary" href="{{ route('imports.index') }}">Cancel</a><a class="btn btn-primary" href="{{ route('imports.show', ['leadImport'=>$leadImport,'step'=>'mapping']) }}">Map columns <x-icon name="arrow-right" size="16" /></a></div>
+            </section>
+        @elseif ($step === 'mapping')
+            <section class="surface-card form-card"><div class="card-heading" style="padding:0 0 13px"><div><h2>Match your columns</h2><p>We’ve suggested a few matches. Review them before validation.</p></div></div>
+                @if($errors->any())<div class="form-error-summary">{{ $errors->first() }}</div>@endif
+                <form method="POST" action="{{ route('imports.mapping', $leadImport) }}">@csrf
+                    <div class="table-scroll"><table class="mapping-table"><thead><tr><th>Spreadsheet column</th><th>Example value</th><th><span class="brand-word">GymXBook</span> field</th></tr></thead><tbody>
+                        @foreach($parsed['headers'] as $index => $header)<tr><td><strong>{{ $header ?: 'Blank column' }}</strong></td><td class="mapping-sample">{{ $parsed['rows'][0][$index] ?? '—' }}</td><td><select class="select-control" name="mapping[{{ $index }}]" aria-label="Map {{ $header }}"><option value="">Skip this column</option>@foreach($mappingFields as $field => $label)<option value="{{ $field }}" @selected(($leadImport->mapping[$index] ?? '') === $field)>{{ $label }}</option>@endforeach</select></td></tr>@endforeach
+                    </tbody></table></div>
+                    <div class="form-actions form-actions-between"><a class="btn btn-secondary" href="{{ route('imports.show', ['leadImport'=>$leadImport,'step'=>'preview']) }}"><x-icon name="arrow-left" size="15" /> Back to preview</a><button class="btn btn-primary" type="submit">Validate rows <x-icon name="arrow-right" size="16" /></button></div>
+                </form>
+            </section>
+        @elseif ($step === 'validation')
+            <section class="surface-card form-card"><div class="card-heading" style="padding:0 0 13px"><div><h2>Validation results</h2><p>Duplicates, missing fields, and invalid values are checked before anything is saved.</p></div><span class="status-pill {{ $leadImport->rows_invalid ? 'status-lost' : 'status-converted' }}">{{ $leadImport->rows_invalid ? 'Needs review' : 'Ready to import' }}</span></div>
+                @if($errors->any())<div class="form-error-summary">{{ $errors->first() }}</div>@endif
+                <div class="validation-summary"><div class="validation-stat"><strong>{{ number_format($leadImport->rows_total) }}</strong><small>Total rows</small></div><div class="validation-stat stat-green"><strong>{{ number_format($leadImport->rows_valid) }}</strong><small>Ready to import</small></div><div class="validation-stat stat-red"><strong>{{ number_format($leadImport->rows_invalid) }}</strong><small>Need attention</small></div></div>
+                @if(($validation['errors'] ?? []) || ($leadImport->summary['errors'] ?? []))<div class="validation-errors">@foreach(($validation['errors'] ?? $leadImport->summary['errors'] ?? []) as $error)<div class="validation-error-row"><strong>Row {{ $error['row'] }}</strong><span>{{ implode(' ', $error['errors']) }}</span></div>@endforeach</div><p class="field-hint">{{ $leadImport->rows_invalid > 100 ? 'Showing the first 100 issues.' : 'Rows with issues will be skipped. Valid rows can still be imported.' }}</p>@else<div class="alert alert-success"><x-icon name="check-circle" size="17" /><span>Every row passed. Your leads are ready to join the pipeline.</span></div>@endif
+                <div class="form-actions form-actions-between"><a class="btn btn-secondary" href="{{ route('imports.show', ['leadImport'=>$leadImport,'step'=>'mapping']) }}"><x-icon name="arrow-left" size="15" /> Adjust mapping</a><div class="heading-actions"><form method="POST" action="{{ route('imports.validate', $leadImport) }}">@csrf<button class="btn btn-secondary" type="submit"><x-icon name="activity" size="15" /> Re-run validation</button></form><form method="POST" action="{{ route('imports.commit', $leadImport) }}" data-confirm="Import {{ $leadImport->rows_valid }} valid leads into this workspace?">@csrf<button class="btn btn-primary" type="submit" {{ $leadImport->rows_valid < 1 ? 'disabled' : '' }}><x-icon name="upload" size="15" /> Import {{ number_format($leadImport->rows_valid) }} leads</button></form></div></div>
+            </section>
+        @else
+            <section class="surface-card import-summary"><span class="summary-success-icon"><x-icon name="check" size="27" /></span><h2>Your leads are in the pipeline.</h2><p>{{ number_format($leadImport->rows_imported) }} leads imported from <strong>{{ $leadImport->filename }}</strong>.</p><div class="summary-stats"><div class="summary-stat"><strong>{{ number_format($leadImport->rows_imported) }}</strong><small>Imported</small></div><div class="summary-stat"><strong>{{ number_format($leadImport->rows_invalid) }}</strong><small>Skipped with issues</small></div><div class="summary-stat"><strong>{{ number_format($leadImport->rows_total) }}</strong><small>Rows reviewed</small></div></div><div class="heading-actions" style="justify-content:center"><a class="btn btn-primary" href="{{ route('leads.index') }}"><x-icon name="users" size="15" /> View your leads</a><a class="btn btn-secondary" href="{{ route('imports.index') }}"><x-icon name="upload" size="15" /> Import another file</a></div></section>
+            @if(($leadImport->summary['errors'] ?? []))<section class="surface-card form-card" style="margin-top:13px"><h2 class="form-section-title">Skipped rows</h2><div class="validation-errors">@foreach($leadImport->summary['errors'] as $error)<div class="validation-error-row"><strong>Row {{ $error['row'] }}</strong><span>{{ implode(' ', $error['errors']) }}</span></div>@endforeach</div></section>@endif
+        @endif
+    </div>
+@endsection

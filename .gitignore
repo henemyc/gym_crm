@@ -1,0 +1,16 @@
+/.env
+/.phpunit.cache
+/.phpunit.result.cache
+/.idea
+/.vscode
+/auth.json
+/node_modules
+/public/build
+/public/hot
+/storage/*.key
+/vendor
+Homestead.json
+Homestead.yaml
+Thumbs.db
+.DS_Store
+npm-debug.log
